@@ -1,0 +1,16 @@
+﻿.git
+.github
+.circleci
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.coverage
+coverage.xml
+.env
+project-assigner
+tests
+test-results
+gitleaks.json
