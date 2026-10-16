@@ -46,7 +46,7 @@ jobs:
       - run:
           name: Wait for services and apply migrations
           command: |
-            python - <<'PY'
+            python - \<<'PY'
             import time
             from pathlib import Path
 
