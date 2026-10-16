@@ -1,0 +1,14 @@
+ .../__init__.cpython-311.pyc => /dev/null          | Bin [31m159[m -> [32m0[m bytes
+ app/__pycache__/cache.cpython-311.pyc => /dev/null | Bin [31m1884[m -> [32m0[m bytes
+ .../clashes.cpython-311.pyc => /dev/null           | Bin [31m14064[m -> [32m0[m bytes
+ app/__pycache__/db.cpython-311.pyc => /dev/null    | Bin [31m1974[m -> [32m0[m bytes
+ app/__pycache__/main.cpython-311.pyc => /dev/null  | Bin [31m9545[m -> [32m0[m bytes
+ .../allocate.py"                                   | 110 [32m+++++++[m
+ .../cache.py"                                      |  28 [32m+[m[31m-[m
+ app/clashes.py => /dev/null                        | 235 [31m--------------[m
+ .../main.py"                                       | 325 [32m++++++++++++[m[31m-------[m
+ .../projects.json"                                 | 354 [32m+++++++++++++++++++++[m
+ .../reader.py"                                     |  62 [32m++++[m
+ .../static/index.html"                             | 261 [32m+++++++++++++++[m
+ .../writer.py"                                     |  85 [32m+++++[m
+ 13 files changed, 1098 insertions(+), 362 deletions(-)

@@ -1,13 +1,30 @@
+<<<<<<< HEAD
 .git
 .circleci
 .venv
+=======
+﻿.git
+.github
+.circleci
+.venv
+venv
+>>>>>>> e681e63c765d767c6e47d1063ad2759d9b708cd3
 __pycache__
 *.pyc
 .pytest_cache
 .ruff_cache
 .coverage
+<<<<<<< HEAD
 htmlcov
 tests
 migrations
 docker-compose.yml
 README.md
+=======
+coverage.xml
+.env
+project-assigner
+tests
+test-results
+gitleaks.json
+>>>>>>> e681e63c765d767c6e47d1063ad2759d9b708cd3
