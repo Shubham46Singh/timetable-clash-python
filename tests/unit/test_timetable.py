@@ -1,23 +1,35 @@
-
-"""Unit tests for timetable rules."""
-
-import pytest
+﻿"""Unit tests for timetable lunch rules."""
 
 from app.clashes import crosses_lunch
 
 
-def test_crosses_lunch_when_class_spans_lunch():
-    # Assumes the function accepts start and end times.
-    assert crosses_lunch("12:30", "13:30") is True
+def test_class_before_lunch_does_not_cross():
+    assert crosses_lunch(540, 600) is False
 
 
-def test_crosses_lunch_when_class_is_before_lunch():
-    assert crosses_lunch("09:00", "10:00") is False
+def test_class_after_lunch_does_not_cross():
+    assert crosses_lunch(840, 900) is False
 
 
-def test_crosses_lunch_when_class_is_after_lunch():
-    assert crosses_lunch("14:00", "15:00") is False
+def test_class_overlapping_lunch():
+    assert crosses_lunch(750, 810) is True
 
 
-def test_crosses_lunch_for_class_ending_at_lunch_start():
-    assert crosses_lunch("11:00", "12:00") is False
+def test_class_inside_lunch():
+    assert crosses_lunch(790, 820) is True
+
+
+def test_class_overlapping_lunch_from_before():
+    assert crosses_lunch(750, 800) is True
+
+
+def test_class_overlapping_lunch_until_after():
+    assert crosses_lunch(830, 870) is True
+
+
+def test_class_ends_at_lunch_start():
+    assert crosses_lunch(720, 780) is False
+
+
+def test_class_starts_at_lunch_end():
+    assert crosses_lunch(840, 900) is False

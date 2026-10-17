@@ -1,32 +1,19 @@
+﻿"""Fixtures for API integration tests."""
 
-"""Shared fixtures for integration tests."""
-
+import os
 import pytest
+from fastapi.testclient import TestClient
 
 
-@pytest.fixture
-def sample_timetable():
-    """Example timetable data for integration tests."""
-    return [
-        {
-            "day": "Monday",
-            "subject": "Mathematics",
-            "start": "09:00",
-            "end": "10:00",
-            "room": "A101",
-        },
-        {
-            "day": "Monday",
-            "subject": "Physics",
-            "start": "09:30",
-            "end": "10:30",
-            "room": "B202",
-        },
-        {
-            "day": "Monday",
-            "subject": "English",
-            "start": "11:00",
-            "end": "12:00",
-            "room": "A101",
-        },
-    ]
+@pytest.fixture(scope="session")
+def client():
+    os.environ.setdefault(
+        "DATABASE_URL",
+        "postgresql://postgres:postgres@localhost:5432/timetable",
+    )
+    os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+
+    from app.main import app
+
+    with TestClient(app) as test_client:
+        yield test_client
