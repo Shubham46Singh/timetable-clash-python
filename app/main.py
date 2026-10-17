@@ -1,4 +1,4 @@
-
+"""Timetable clash API."""
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 
@@ -17,6 +17,12 @@ from .clashes import (
 
 app = FastAPI()
 
+COLS = 'id, day, start_min AS start, end_min AS "end", subject, teacher, room, batch'
+
+# Arbitrary id for a Postgres advisory lock that serialises timetable writes,
+# so two simultaneous requests cannot both pass the clash check and double-book.
+WRITE_LOCK = 727401
+
 
 @app.get("/")
 def root():
@@ -25,9 +31,6 @@ def root():
         "docs": "/docs",
         "health": "/health",
     }
-
-
-COLS = 'id, day, start_min AS start, end_min AS "end", subject, teacher, room, batch'
 
 
 @app.get("/health")
@@ -66,19 +69,17 @@ def readable(row):
     return out
 
 
-def check(payload, ignore_id=None):
-    """Validate one class and compare it against everything already booked."""
+def validated(payload):
     try:
-        entry = validate_class(payload)
+        return validate_class(payload)
     except ClashError as e:
         raise HTTPException(400, str(e))
-
-    return entry, find_clashes(entry, all_classes(), ignore_id=ignore_id)
 
 
 @app.get("/classes")
 def list_classes(day: str = Query(None)):
-    rows = all_classes()
+    everything = all_classes()          # one query, reused below
+    rows = everything
 
     if day:
         try:
@@ -91,14 +92,15 @@ def list_classes(day: str = Query(None)):
     return {
         "count": len(rows),
         "classes": [readable(r) for r in rows],
-        "teacher_minutes": workload(all_classes()),
+        "teacher_minutes": workload(everything),
     }
 
 
 @app.post("/classes/check")
 def dry_run(payload: dict = Body(...)):
     """Would this class be accepted? Nothing is written either way."""
-    entry, clashes = check(payload)
+    entry = validated(payload)
+    clashes = find_clashes(entry, all_classes())
 
     return {
         "ok": not clashes,
@@ -114,28 +116,36 @@ def dry_run(payload: dict = Body(...)):
 
 @app.post("/classes", status_code=201)
 def add_class(payload: dict = Body(...)):
-    entry, clashes = check(payload)
+    entry = validated(payload)
 
-    if clashes:
-        raise HTTPException(
-            409,
-            {"error": "that slot clashes", "clashes": clashes},
+    # Check and insert inside one transaction under a lock. Doing them as
+    # separate calls lets two concurrent requests both see "no clash".
+    with db.connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", (WRITE_LOCK,))
+        cur.execute("SELECT " + COLS + " FROM classes")
+        clashes = find_clashes(entry, cur.fetchall())
+
+        if clashes:
+            raise HTTPException(
+                409,
+                {"error": "that slot clashes", "clashes": clashes},
+            )
+
+        cur.execute(
+            "INSERT INTO classes "
+            "(day, start_min, end_min, subject, teacher, room, batch)"
+            " VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING " + COLS,
+            (
+                entry["day"],
+                entry["start"],
+                entry["end"],
+                entry["subject"],
+                entry["teacher"],
+                entry["room"],
+                entry["batch"],
+            ),
         )
-
-    row = db.one(
-        "INSERT INTO classes "
-        "(day, start_min, end_min, subject, teacher, room, batch)"
-        " VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING " + COLS,
-        (
-            entry["day"],
-            entry["start"],
-            entry["end"],
-            entry["subject"],
-            entry["teacher"],
-            entry["room"],
-            entry["batch"],
-        ),
-    )
+        row = cur.fetchone()
 
     cache.drop_prefix("tt:")
     return readable(row)
@@ -163,7 +173,7 @@ def timetable(kind: str, value: str):
     key = "tt:%s:%s" % (kind, value)
     hit = cache.get_json(key)
 
-    if hit:
+    if hit is not None:
         return {**hit, "cached": True}
 
     views = build_views(all_classes(), kind)
@@ -199,18 +209,20 @@ def free(
     except ClashError as e:
         raise HTTPException(400, str(e))
 
+    if minutes < 1:
+        raise HTTPException(400, "minutes must be positive")
+
     rows = all_classes()
 
+    # Case-insensitive, matching how find_clashes compares resources.
     for field, want in (
         ("room", room),
         ("teacher", teacher),
         ("batch", batch),
     ):
         if want:
-            rows = [r for r in rows if r[field] == want]
-
-    if minutes < 1:
-        raise HTTPException(400, "minutes must be positive")
+            w = want.strip().lower()
+            rows = [r for r in rows if str(r[field]).lower() == w]
 
     return {
         "day": day,

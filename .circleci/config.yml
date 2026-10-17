@@ -43,7 +43,7 @@ jobs:
           name: Unit tests (no DB, no network) with coverage
           command: |
             . .venv/bin/activate
-            pytest tests/unit --cov=app.clashes --cov-report=term-missing --cov-fail-under=70
+            pytest test/unit --cov=app.clashes --cov-report=term-missing --cov-fail-under=70
 
   integration-tests:
     docker:
@@ -83,7 +83,7 @@ jobs:
           name: Integration tests
           command: |
             . .venv/bin/activate
-            pytest tests/integration --cov=app --cov-report=term-missing --cov-fail-under=70
+            pytest test/integration --cov=app --cov-report=term-missing --cov-fail-under=70
 
   secret-scan:
     docker:
