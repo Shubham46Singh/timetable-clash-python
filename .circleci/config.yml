@@ -1,0 +1,133 @@
+version: 2.1
+
+executors:
+  py:
+    docker:
+      - image: cimg/python:3.12.4
+
+commands:
+  install-deps:
+    steps:
+      - restore_cache:
+          keys:
+            - pip-v1-{{ checksum "requirements.txt" }}-{{ checksum "requirements-dev.txt" }}
+      - run:
+          name: Install dependencies
+          command: |
+            python -m venv .venv
+            . .venv/bin/activate
+            pip install -r requirements-dev.txt
+      - save_cache:
+          key: pip-v1-{{ checksum "requirements.txt" }}-{{ checksum "requirements-dev.txt" }}
+          paths:
+            - .venv
+
+jobs:
+  lint:
+    executor: py
+    steps:
+      - checkout
+      - install-deps
+      - run:
+          name: Ruff
+          command: |
+            . .venv/bin/activate
+            ruff check .
+
+  unit-tests:
+    executor: py
+    steps:
+      - checkout
+      - install-deps
+      - run:
+          name: Unit tests (no DB, no network) with coverage
+          command: |
+            . .venv/bin/activate
+            pytest tests/unit --cov=app.clashes --cov-report=term-missing --cov-fail-under=70
+
+  integration-tests:
+    docker:
+      - image: cimg/python:3.12.4
+      # Service containers: in CircleCI the host is localhost (opposite of compose)
+      - image: postgres:16.3-alpine
+        environment:
+          POSTGRES_USER: timetable
+          POSTGRES_PASSWORD: timetable
+          POSTGRES_DB: timetable
+      - image: redis:7.2-alpine
+    environment:
+      DATABASE_URL: postgresql://timetable:timetable@localhost:5432/timetable
+      REDIS_URL: redis://localhost:6379/0
+    steps:
+      - checkout
+      - install-deps
+      - run:
+          name: Install psql client
+          command: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+      - run:
+          name: Wait for Postgres
+          command: |
+            for i in $(seq 1 30); do
+              pg_isready -h localhost -U timetable -d timetable && exit 0
+              sleep 2
+            done
+            echo "Postgres never became ready"; exit 1
+      - run:
+          name: Apply migrations in filename order
+          command: |
+            for f in $(ls migrations/*.sql | sort); do
+              echo "applying $f"
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+            done
+      - run:
+          name: Integration tests
+          command: |
+            . .venv/bin/activate
+            pytest tests/integration --cov=app --cov-report=term-missing --cov-fail-under=70
+
+  secret-scan:
+    docker:
+      - image: cimg/base:2024.06
+    steps:
+      - checkout
+      - run:
+          name: Install gitleaks
+          command: |
+            curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz \
+              | tar -xz gitleaks
+            sudo mv gitleaks /usr/local/bin/
+      - run:
+          name: Scan repository history for secrets
+          command: gitleaks detect --source . --redact --verbose
+
+  build-image:
+    docker:
+      - image: cimg/base:2024.06
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Build image
+          command: docker build -t "${DOCKERHUB_USER:-local}/timetable-clash:1.0" .
+      - run:
+          name: Push to Docker Hub (only if credentials are configured)
+          command: |
+            if [ -n "$DOCKERHUB_USER" ] && [ -n "$DOCKERHUB_PASS" ] && [ "$CIRCLE_BRANCH" = "main" ]; then
+              echo "$DOCKERHUB_PASS" | docker login -u "$DOCKERHUB_USER" --password-stdin
+              docker push "$DOCKERHUB_USER/timetable-clash:1.0"
+            else
+              echo "Skipping push (no credentials, or not main)"
+            fi
+
+workflows:
+  ci:
+    jobs:
+      - lint
+      - unit-tests:
+          requires: [lint]
+      - integration-tests:
+          requires: [unit-tests]
+      - secret-scan:
+          requires: [integration-tests]
+      - build-image:
+          requires: [secret-scan]
